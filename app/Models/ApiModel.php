@@ -1,287 +1,258 @@
 <?php
 
 namespace App\Models;
+
 use CodeIgniter\Model;
 
 class ApiModel extends Model
 {
-    
-    public function __construct() {
-        parent::__construct();
-    }    
-
-    public function consulta($condicion,$tabla){ 
-
-        //echo print_r($condicion[0]->where,true);
-
+    public function consulta($condicion, $tabla)
+    {
         $db = \Config\Database::connect();
 
-        try{
+        try {
+            $builder = $db->table($tabla);
 
-            $err = '0';
-            $msj = '';
-            $res = '';
-        
-        $builder = $db->table($tabla);   
+            if (!empty($condicion)) {
 
-        $condicionAv = json_decode(json_encode($condicion), true);
+                if (!empty($condicion->select)) {
+                    $builder->select($condicion->select);
+                }
 
-        if (is_array($condicionAv)) {
+                if (!empty($condicion->where)) {
+                    $builder->where($this->toArray($condicion->where));
+                }
 
-        $condicionsA = json_decode(json_encode($condicion->select), true);
-        $condicionA = json_decode(json_encode($condicion->where), true);
-        $condicioninA = json_decode(json_encode($condicion->wherein), true);    
-        $condicionjoinA = json_decode(json_encode($condicion->join), true);
-        
-        $condicionlikeA = '';
-        if (isset($condicion->like)){
-            $condicionlikeA = json_decode(json_encode($condicion->like), true); 
-        }
-        
-        
-        //echo print_r($condicionA,true);
-        //echo print_r($condicioninA,true);
-        //echo print_r($condicionjoinA,true);
-        
-        if (strlen($condicionsA) > 0 ) {
-            $builder->select($condicionsA);
-        }
+                if (!empty($condicion->wherein)) {
+                    foreach ($condicion->wherein as $rin) {
+                        $builder->whereIn($rin->campo, $rin->datos);
+                    }
+                }
 
-        if (is_array($condicionA)) {
-            $builder->where($condicionA);
-        }
+                if (!empty($condicion->join)) {
+                    foreach ($condicion->join as $rjoin) {
+                        $builder->join(
+                            $rjoin->join,
+                            $rjoin->on,
+                            $rjoin->type ?? 'inner'
+                        );
+                    }
+                }
 
-        if (is_array($condicioninA)) {
-            foreach($condicion->wherein as $rins => $rin) {
-                $campoin = json_decode(json_encode($rin->campo), true);
-                $datosin = json_decode(json_encode($rin->datos), true);
-                
-                $builder->whereIn($campoin,$datosin);
+                if (!empty($condicion->like)) {
+                    $builder->like($this->toArray($condicion->like));
+                }
+
+                if (!empty($condicion->groupby)) {
+                    foreach ($condicion->groupby as $group) {
+                        $builder->groupBy($group);
+                    }
+                }
+
+                if (!empty($condicion->orderby)) {
+                    foreach ($condicion->orderby as $order) {
+                        $campo = $order->campo ?? '';
+                        $tipo  = $order->tipo ?? 'ASC';
+
+                        if ($campo !== '') {
+                            $builder->orderBy($campo, $tipo);
+                        }
+                    }
+                }
+
+                if (!empty($condicion->limit)) {
+                    $builder->limit((int)$condicion->limit);
+                }
             }
-        }
-        
-        if (is_array($condicionjoinA)) {
 
-            //echo print_r($condicionjoinA,true);
+            $query = $builder->get();
 
-            foreach($condicion->join as $rjoins => $rjoin) {       
-                $builder->join($rjoin->join,$rjoin->on,$rjoin->type);
-                //$builder->join("admin.dlista as b","a.lista = b.lista and a.estado = 'A'","inner");
-            }    
-        }
-        
-        if (is_array($condicionlikeA)) {
-            $builder->like($condicionlikeA);
-        }
+            return [
+                'errCodigo' => '0',
+                'errMenssa' => 'OK',
+                'respuesta' => $query->getResult()
+            ];
 
-        }
-        //echo "aqui con";         
-        $query  = $builder->get();
-        //echo "des aqui con";
-        
-        
-        if( !$query ){
-            $err = '9910';
-            $msj = $db->error();
-            log_message( 'error','peticion: error:'.$this->mapped_implode(" |",$msj,':'));
-        } else {
-        $msj = 'OK';
-        $res = $query->getResult();
-        }
+        } catch (\Throwable $e) {
+            $msj = $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine();
 
-        $db->close();
-        
-        $respuesta = array("errCodigo" => $err, "errMenssa" => $msj, "respuesta" => $res );  
-		return $respuesta;
+            log_message('error', 'peticion: error consulta:' . $msj);
 
-    }catch(\Exception $e ){
-        
-        $db->close();
-        $err = '9911';
-        $msj = $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine();
-        log_message( 'error', 'peticion: error:'.$msj );
-        
-        $respuesta = array("errCodigo" => $err, "errMenssa" => $msj, "respuesta" => $res );  
-		return $respuesta;
-        
-    }        
+            return [
+                'errCodigo' => '9911',
+                'errMenssa' => $msj,
+                'respuesta' => null
+            ];
+
+        } finally {
+            $db->close();
+        }
     }
 
-    public function inserta($data,$tabla){
+    public function inserta($data, $tabla)
+    {
         $db = \Config\Database::connect();
-    
-        try{
 
-        $err = '0';
-        $msj = '';
-        $res = '';
-        
-        $builder = $db->table($tabla);
+        try {
+            $builder = $db->table($tabla);
 
-        $res = $builder->upsertBatch($data);
-        $db->close();
-    
-        $msj = 'OK';
+            if (empty($data)) {
+                return [
+                    'errCodigo' => '9901',
+                    'errMenssa' => 'No existen datos para insertar',
+                    'respuesta' => null
+                ];
+            }
 
-        $respuesta = array("errCodigo" => $err, "errMenssa" => $msj, "respuesta" => $res );  
-		return $respuesta;
+            $res = $builder->upsertBatch($this->toArray($data));
 
-    }catch(\Exception $e ){
-        
-        $db->close();
-        $err = '9902';
-        $msj = $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine();
-        log_message( 'error', 'peticion: error:'.$msj );
-        
-        $respuesta = array("errCodigo" => $err, "errMenssa" => $msj, "respuesta" => $res );  
-		return $respuesta;
-        
-    }
-      
-    }
+            return [
+                'errCodigo' => '0',
+                'errMenssa' => 'OK',
+                'respuesta' => $res
+            ];
 
-    public function modifica($condicion,$data,$tabla){
-        $db = \Config\Database::connect();
-        try{
+        } catch (\Throwable $e) {
+            $msj = $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine();
 
-            $err = '0';
-            $msj = '';
-            $res = '';
-    
-        $builder = $db->table($tabla);
+            log_message('error', 'peticion: error inserta:' . $msj);
 
-        $condicionAv = json_decode(json_encode($condicion), true);
+            return [
+                'errCodigo' => '9902',
+                'errMenssa' => $msj,
+                'respuesta' => null
+            ];
 
-        if (is_array($condicionAv)) {
-
-            $condicionA = json_decode(json_encode($condicion->where), true);
-
-            if (is_array($condicionA)) {
-                $builder->where($condicionA);
-            }        
+        } finally {
+            $db->close();
         }
-
-
-        $res = $builder->update($data);
-        $db->close();
-
-        $msj = 'OK';
-
-        $respuesta = array("errCodigo" => $err, "errMenssa" => $msj, "respuesta" => $res );  
-
-		return $respuesta;
-
-    }catch(\Exception $e ){
-        
-        $db->close();
-        $err = '9903';
-        $msj = $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine();
-        log_message( 'error', 'peticion: error:'.$msj );
-        
-        $respuesta = array("errCodigo" => $err, "errMenssa" => $msj, "respuesta" => $res );  
-		return $respuesta;
-        
     }
-        
-    }
-    
-    public function proceso($param,$procedure){
+
+    public function modifica($condicion, $data, $tabla)
+    {
         $db = \Config\Database::connect();
-        try{
 
-            $err = '0';
-            $msj = '';
-            $res = '';
-        
-            $jparam =json_encode($param);
-            //echo print_r($jparam,true);    
+        try {
+            $builder = $db->table($tabla);
 
-        $sql = "CALL ". $procedure ."('" . $jparam . "')"; 
-        //echo print_r($sql,true);
-        $resul = $db->query($sql);
+            if (!empty($condicion) && !empty($condicion->where)) {
+                $builder->where($this->toArray($condicion->where));
+            } else {
+                return [
+                    'errCodigo' => '9905',
+                    'errMenssa' => 'No existe condición WHERE para actualizar',
+                    'respuesta' => null
+                ];
+            }
 
-        if( $resul ){  
-           $res =$resul->getResult();
-           $msj = 'OK';
-        }else{
-            $err = '9950';
-            $msj = $db->error();
-            log_message( 'error','peticion: error:'.$this->mapped_implode(" |",$msj,':'));
+            if (empty($data)) {
+                return [
+                    'errCodigo' => '9906',
+                    'errMenssa' => 'No existen datos para actualizar',
+                    'respuesta' => null
+                ];
+            }
+
+            $res = $builder->update($this->toArray($data));
+
+            return [
+                'errCodigo' => '0',
+                'errMenssa' => 'OK',
+                'respuesta' => $res
+            ];
+
+        } catch (\Throwable $e) {
+            $msj = $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine();
+
+            log_message('error', 'peticion: error modifica:' . $msj);
+
+            return [
+                'errCodigo' => '9903',
+                'errMenssa' => $msj,
+                'respuesta' => null
+            ];
+
+        } finally {
+            $db->close();
         }
-
-        $db->close();
-
-        $respuesta = array("errCodigo" => $err, "errMenssa" => $msj, "respuesta" => $res );  
-
-        return $respuesta;
-
-    }catch(\Exception $e ){
-        
-        $db->close();
-        $err = '9904';
-        $msj = $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine();
-        log_message( 'error', 'peticion: error:'.$msj );
-        
-        $respuesta = array("errCodigo" => $err, "errMenssa" => $msj, "respuesta" => $res );  
-		return $respuesta;
-        
     }
 
-    }
-
-    public function elimina($condicion,$tabla){
+    public function elimina($condicion, $tabla)
+    {
         $db = \Config\Database::connect();
-        try{
 
-            $err = '0';
-            $msj = '';
-            $res = '';
-       
-        $builder = $db->table($tabla);
+        try {
+            $builder = $db->table($tabla);
 
-        $condicionAv = json_decode(json_encode($condicion), true);
+            if (!empty($condicion) && !empty($condicion->where)) {
+                $builder->where($this->toArray($condicion->where));
+            } else {
+                return [
+                    'errCodigo' => '9907',
+                    'errMenssa' => 'No existe condición WHERE para eliminar',
+                    'respuesta' => null
+                ];
+            }
 
-        if (is_array($condicionAv)) {
+            $res = $builder->delete();
 
-            $condicionA = json_decode(json_encode($condicion->where), true);
+            return [
+                'errCodigo' => '0',
+                'errMenssa' => 'OK',
+                'respuesta' => $res
+            ];
 
-            if (is_array($condicionA)) {
-                $builder->where($condicionA);
-            }        
+        } catch (\Throwable $e) {
+            $msj = $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine();
+
+            log_message('error', 'peticion: error elimina:' . $msj);
+
+            return [
+                'errCodigo' => '9904',
+                'errMenssa' => $msj,
+                'respuesta' => null
+            ];
+
+        } finally {
+            $db->close();
         }
-
-        $res = $builder->delete();
-        $db->close();
-
-        $msj = 'OK';
-
-        $respuesta = array("errCodigo" => $err, "errMenssa" => $msj, "respuesta" => $res );  
-
-        return $respuesta;
-
-    }catch(\Exception $e ){
-        
-        $db->close();
-        $err = '9904';
-        $msj = $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine();
-        log_message( 'error', 'peticion: error:'.$msj );
-        
-        $respuesta = array("errCodigo" => $err, "errMenssa" => $msj, "respuesta" => $res );  
-		return $respuesta;
-        
     }
 
+    public function proceso($param, $procedure)
+    {
+        $db = \Config\Database::connect();
+
+        try {
+            $jparam = json_encode($param, JSON_UNESCAPED_UNICODE);
+
+            log_message('info', 'peticion: proceso CALL ' . $procedure . ' param:' . $jparam);
+
+            $query = $db->query("CALL {$procedure}(?)", [$jparam]);
+
+            return [
+                'errCodigo' => '0',
+                'errMenssa' => 'OK',
+                'respuesta' => $query ? $query->getResult() : null
+            ];
+
+        } catch (\Throwable $e) {
+            $msj = $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine();
+
+            log_message('error', 'peticion: error proceso:' . $msj);
+
+            return [
+                'errCodigo' => '9950',
+                'errMenssa' => $msj,
+                'respuesta' => null
+            ];
+
+        } finally {
+            $db->close();
+        }
     }
 
-    function mapped_implode($glue, $array, $symbol = '=') {
-        return implode($glue, array_map(
-                function($k, $v) use($symbol) { 
-                    return $k . $symbol . $v;
-                }, 
-                array_keys($array), 
-                array_values($array)
-                )
-            );
+    private function toArray($data): array
+    {
+        return json_decode(json_encode($data), true) ?? [];
     }
-    
 }
